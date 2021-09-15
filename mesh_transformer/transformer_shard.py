@@ -34,6 +34,7 @@ class CausalTransformerShard(hk.Module):
 
         init_scale = 2. / layer_count
 
+        # BJ: stack layers:
         for i in range(layer_count):
             self.transformer_layers.append(TransformerLayerShard(config, name=f"layer_{i}", init_scale=init_scale))
 
@@ -44,6 +45,7 @@ class CausalTransformerShard(hk.Module):
         else:
             self.rpe = None
 
+    # BJ: returns (logloss, correct). See ProjectionShard.loss()
     def eval(self, context, target, z_loss=0., mask=0.0):
         input_len = context.shape[0]
 
@@ -115,6 +117,7 @@ class CausalTransformerShard(hk.Module):
         return self.proj(x), new_states
 
 
+# BJ: not a hk.Module
 class CausalTransformer:
     def __init__(self, config):
         self.config = config
@@ -127,6 +130,7 @@ class CausalTransformer:
 
             eval_loss_fn = hk.without_apply_rng(hk.transform(eval_loss)).apply
 
+            # BJ: Only compute inside ctx_length.
             mask = (jnp.arange(0, len(ctx)) > ctx_length) * -1e10
 
             return eval_loss_fn(to_bf16(state["params"]), ctx, tgt, mask)
@@ -155,6 +159,7 @@ class CausalTransformer:
                 (loss, last_loss), grad = val_grad_fn(to_bf16(state["params"]), ctx[0], tgt[0])
                 gnorm = global_norm(grad)
             else:
+                # BJ: Accumulate gradient across the first dim ("batch") of ctx & tgt.
                 grad, (loss, last_loss, gnorm) = jax.lax.scan(microbatch,
                                                        jax.tree_map(lambda x: jnp.zeros_like(x).astype(jnp.bfloat16),
                                                                     state["params"]),
@@ -503,6 +508,7 @@ class CausalTransformerV2:
             def apply_scan_fn(x, layer_state):
                 return to_bf16(transformer_apply_fn(layer_state, x, 0)), None
 
+            # BJ: This is the for-loop over layers.
             x = jax.lax.scan(apply_scan_fn,
                              x,
                              xs=params["transformer"])[0]

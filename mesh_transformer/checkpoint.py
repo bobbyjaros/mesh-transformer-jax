@@ -49,6 +49,12 @@ def write(x, ckpt_dir):
     raise Exception("save failed")
 
 
+# BJ:
+# Divide a into n lists as evenly as possible:
+# Example: split(arange(10),3) -->
+#   [[0 1 2 3],
+#    [4 5 6],
+#    [7 8 9]]
 def split(a, n):
     k, m = divmod(len(a), n)
     return (a[i * k + min(i, m):(i + 1) * k + min(i + 1, m)] for i in range(n))
@@ -58,6 +64,7 @@ def write_ckpt(pytree, dir, shard):
     # ckpt_dir = Path(dir)
     # ckpt_dir.mkdir(parents=True, exist_ok=True)
 
+    # BJ: see read_ckpt for tree_flatten() example.
     flattened, structure = jax.tree_flatten(pytree)
 
     start = time.time()
@@ -81,7 +88,7 @@ def write_ckpt(pytree, dir, shard):
 
 def read_shard(ckpt_dir):
     out = []
-    for idx in range(16):
+    for idx in range(pieces):
         file_path = ckpt_dir + f"{idx}.npz"
         with open(file_path, "rb") as f:
             buf = f.read()
@@ -135,6 +142,11 @@ def read_ckpt(pytree, dir, shards_in, shards_out=None, load_opt=True):
     if shards_out is None:
         shards_out = shards_in
 
+    # BJ: tree_flatten() example:
+    # >>> x = { "params": { "dogs": [3,4,5], "cats": [5,7] }, "state": [8,9,10]}
+    # >>> jax.tree_util.tree_flatten(x)
+    #  ([5, 7, 3, 4, 5, 8, 9, 10],
+    #   PyTreeDef({'params': {'cats': [*, *], 'dogs': [*, *, *]}, 'state': [*, *, *]}))
     old_flattened, structure = jax.tree_flatten(pytree)
 
     original_opt_state = pytree["opt_state"]
@@ -148,6 +160,10 @@ def read_ckpt(pytree, dir, shards_in, shards_out=None, load_opt=True):
     def _unshard(shards, old_flattened):
         unsharded = []
 
+        # BJ: old_flattened is a list of #layers parameter arrays.
+        #     shards is a list of #shards lists, each a list of #layers parameter arrays.
+        #     So inside the for loop, old is a parameter array, and all_shards is a
+        #     list of parameter arrays from each shard.
         for old, *all_shards in zip(old_flattened, *shards):
             x = np.stack(all_shards)
             # No idea why this is V2...?

@@ -77,6 +77,7 @@ class NetworkRunner(object):
         return self.output_q.get()
 
     def train(self, sample):
+        # BJ: sample is (batch_size, 2049)
         self.input_q.put(("train", sample))
         return self.output_q.get()
 

@@ -95,7 +95,8 @@ def to_bf16(t):
 def to_f16(t):
     return jax.tree_map(lambda x: x.astype(jnp.float16) if x.dtype == jnp.float32 else x, t)
 
-
+## See "Code 1" (p 4) of Megatron-LM paper:
+## Effectively a broadcast
 # identity in forward pass, psum in backward
 @jax.custom_vjp
 def f_psum(x):

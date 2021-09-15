@@ -226,6 +226,23 @@ class EmbeddingShardV2(hk.Module):
 
 
 # We actually combine the FF and dense in one layer (i.e. compute in parallel) to minimize all reduces
+# BJ: parameters per layer:
+#   q: d_model x d_model   (actually 8 x d_model x d_model/8)
+#   v: d_model x d_model   ""
+#   k: d_model x d_model   ""
+#   o: d_model x d_model   (actually 8 x d_model/8 x d_model)
+#   dense_proj: d_model x 4*d_model     (actually 8 x d_model * d_model/2)
+#            b: 4*d_model
+#   dense_proj_o: 4*d_model x d_model   (actually 8 x d_model/2 * d_model)
+#              b: d_model
+#   total: 12 * (d_model**2) + 7*d_model
+#
+# e.g. d_model = 4096 ==> 201.4m params per layer
+#  With 28 layers ==> 5.628m params in layer
+#  Then add    + n_vocab (50400) * d_model = 206.4m
+#              + another, for output = 206.4m
+#       = 6.05B params
+# (also saves replicated_layer_norm (offset and scale))
 class TransformerLayerShard(hk.Module):
     def __init__(self, config, name=None, init_scale=1.):
         super().__init__(name=name)
@@ -272,6 +289,10 @@ class TransformerLayerShard(hk.Module):
             k = jnp.concatenate([k_rot, k_pass], axis=-1)
             q = jnp.concatenate([q_rot, q_pass], axis=-1)
 
+        # BJ:
+        # t and T = timesteps (positions)
+        # h = head
+        # d = dim
         attention_logits = jnp.einsum("thd,Thd->htT", q, k)
 
         sqrt_key_size = np.sqrt(self.dim_per_head).astype(k.dtype)
@@ -280,8 +301,11 @@ class TransformerLayerShard(hk.Module):
         attention_logits += attn_bias
 
         attention_weights = jax.nn.softmax(attention_logits)
+        # BJ: Apply attention and concat this shard's heads.
         attention_vec = jnp.einsum("htT,Thd->thd", attention_weights, v).reshape((-1, self.dim_per_shard))
 
+        # BJ: We'll need to add this result to the self.o(.) from the other shards (other
+        #     heads).  This happens via g_psum() in __call__().
         return self.o(attention_vec)
 
     def ff(self, x):
@@ -298,8 +322,27 @@ class TransformerLayerShard(hk.Module):
 
     def __call__(self, x, attn_bias):
         x = f_psum(x)
+        ## BJ: GPT-2 moved LayerNorm to the input.
+        ##     See diagram in Fig 2 of Megatron-LM paper.
         x = self.norm(x)
 
+        # In GPT-J, we apply the multihead attention module and the feedforward
+        # module to the *same* input, and add the respective results, which becomes
+        # the input to the next layer.
+        #
+        # The advantage, computationally, is that this saves you an all-reduce in the
+        # forward pass and the backward pass. (See Shoeybi et al’s Megatron paper for
+        # the model parallelism framework.)
+        #
+        # Aran Komatsuzaki:
+        #   we compared the two approaches in a smaller scale and verified the parallel
+        #   method performs slightly better in terms of downstreaming performance.
+        # Ben Wang:
+        #   slightly faster convergence, likely due to init
+        #   but it was very close, and about 10% faster throughput
+        #   so its worth it
+        #   inspired by all-attn
+        #   and layerdrop
         q, v, k = self.qvk_proj(x)
 
         seq_len = x.shape[0]
@@ -330,6 +373,8 @@ class TransformerLayerShard(hk.Module):
 
         masked_tokens = length - tokens_decoded
 
+        # If tokens_decoded = 3,
+        # bias = [-1e10 -1e10 ... -1e10  0  0  0]
         attention_mask = jnp.arange(0, length) < masked_tokens
         bias = (-1e10 * attention_mask)
         bias += attn_bias
@@ -357,6 +402,8 @@ class TransformerLayerShard(hk.Module):
         causal_mask = np.tril(np.ones((seq_len, seq_len)))
 
         bias = -1e10 * (1. - causal_mask)  # regular AR masking
+        # If given_length = 3,
+        # bias = [-1e10 -1e10 ... -1e10  0  0  0]
         bias -= 1e10 * (jnp.arange(0, full_length) < masked_tokens)  # mask out zero tokens before context starts
         bias += attn_bias  # finally add attn bias for rpe
 
@@ -563,18 +610,23 @@ class ProjectionShard(hk.Module):
         proj = self.proj(x)
 
         all_proj = jax.lax.all_gather(proj, 'shard')
+        # BJ: --> all_proj dims [#shard, t, dim_per_shard]
 
         return hk.Flatten()(jnp.transpose(all_proj, (1, 0, 2)))
+        # BJ: --> output dims [t, #shard*dim_per_shard]
 
     def loss(self, x, targets, z_loss=1):
         x = f_psum(x)
         x = self.norm(x)
         logits = self.proj(x)
 
+        # BJ: targets are over global # output, but each shard has its local chunk
         shard_start_index = jax.lax.axis_index('shard') * self.dim_per_shard
+        # BJ: why do we need stop_gradient here?
         global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "shard")
         logits -= jax.lax.stop_gradient(global_max)
 
+        # BJ: the logits of the target indices:
         gt_onehot = jax.nn.one_hot(targets - shard_start_index, self.dim_per_shard)
         predicted_logits = jnp.sum(jnp.multiply(gt_onehot, logits), axis=-1)
         predicted_logits = g_psum(predicted_logits)

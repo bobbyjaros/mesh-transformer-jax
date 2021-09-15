@@ -135,6 +135,8 @@ def get_connection(
     return outputs
 
 
+# BJ: conn: fabric connection provided by get_connection()
+#     So these are commands run on the remote nodes.
 def start_ray(conn, address, version=1):
     conn.sudo('rm -rf *.py')
     conn.sudo('rm -rf mesh_transformer')

@@ -122,6 +122,8 @@ def _int64_feature(value):
 def write_to_file(writer, data):
     """
     writes data to tfrecord file
+
+    int64_list serialized to a string (looks like ~2 bytes per int)
     """
     feature = {
         "text": _int64_feature(data)
@@ -230,6 +232,14 @@ def arrays_to_sequences(token_list_iterable, sequence_length=2049):
 
 
 def chunk_and_finalize(arrays, args, encoder):
+    # BJ: For example
+    #  arrays of lengths [2940, 10485, 2105, 5918]
+    #  -> sequences of len [2049, 2049, 2049, 2049, 2049, 2049, 2049, 2049, 2049, 2049, 958]
+    #  -> trailing_data of 958
+    #
+    # (Sum of lengths of arrays is same as sum of lengths of sequences).
+    #
+    # NOTE that this will combine different docs into the same chunk.
     sequences = list(arrays_to_sequences(arrays))
 
     full_seqs, trailing_data = sequences[:-1], sequences[-1]
@@ -252,6 +262,7 @@ def create_tfrecords(files, args):
     all_sequences_across_epochs = []
 
     docs = read_files_to_tokenized_docs(files, args, encoder)
+    # docs is a list of list of ints. One list for each doc (or more if <|endoftext|> )
 
     full_seqs, trailing_data = chunk_and_finalize(docs, args, encoder)
 

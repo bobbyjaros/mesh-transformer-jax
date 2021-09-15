@@ -187,6 +187,7 @@ class TPUCluster:
                 blob.delete()
 
             # create metadata file
+            # This syntax works (write to gcp storage) thanks to smart_open's open:
             with open(f"gs://{bucket}/{path}/meta.json", "w") as f:
                 json.dump({
                     "step": 0,
