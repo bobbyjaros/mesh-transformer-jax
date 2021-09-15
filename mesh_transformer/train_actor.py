@@ -22,7 +22,8 @@ class NetworkRunner(object):
         import haiku as hk
         # jax.experimental.maps.EXPERIMENTAL_SPMD_LOWERING = True
 
-        thread_resources.env = ResourceEnv(Mesh(np.empty((), dtype=object), ()), ())
+        # BJ: removed an argument; version mismatch?
+        thread_resources.env = ResourceEnv(Mesh(np.empty((), dtype=object), ()))
 
         start = time.time()
         jax.devices()
