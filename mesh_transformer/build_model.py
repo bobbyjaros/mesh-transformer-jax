@@ -34,6 +34,7 @@ def build_model(params, tpu_name, region, preemptible, version=1):
     head_info = ray.init(include_dashboard=False, object_store_memory=10**9)
     address = head_info['redis_address']
 
+    print(f"start_ray on {conns}. redis_address: {address}")
     with multiprocessing.pool.ThreadPool(processes=len(conns)) as p:
         p.map(functools.partial(start_ray, address=address, version=version), conns)
 

@@ -129,15 +129,20 @@ def get_connection(
     info = check_tpu(name, zone)
     outputs = []
     for i in info["networkEndpoints"]:
-        outputs.append(Connection(i["ipAddress"],
+        print(f"networkEndpoint: {i}")
+        ip_addr = i['ipAddress']
+        # If accessing externally:
+        # ip_addr = i['accessConfig']['externalIp']
+        outputs.append(Connection(ip_addr,
                                   connect_kwargs={
-                                      "key_filename": os.path.expanduser('~/.ssh/google_compute_engine'), }))
+                                      "key_filename": [os.path.expanduser('~/.ssh/google_compute_engine')], }))
     return outputs
 
 
 # BJ: conn: fabric connection provided by get_connection()
 #     So these are commands run on the remote nodes.
 def start_ray(conn, address, version=1):
+    print("start_ray")
     conn.sudo('rm -rf *.py')
     conn.sudo('rm -rf mesh_transformer')
 
@@ -150,6 +155,7 @@ def start_ray(conn, address, version=1):
         conn.put(i, "mesh_transformer/")
 
     conn.sudo('python3 setup.py install', hide=True)
+    print("start_ray 1")
 
     if version == 2:
         conn.put("scripts/init_ray_v2.sh", "/tmp/ray-tpu.sh")
@@ -161,7 +167,12 @@ def start_ray(conn, address, version=1):
         conn.run('ray stop -f', hide=True)
     except:
         pass
+    print("start_ray pushed files")
 
     time.sleep(1)
 
+    ## Hangs without this command:
+    conn.run('pip install aioredis==1.3.1')
+    print(f"TCMALLOC_LARGE_ALLOC_REPORT_THRESHOLD={32 * 1024**3} ray start --address={address} --resources='" + '{"tpu": 1}\' --include-dashboard False')
     conn.run(f"TCMALLOC_LARGE_ALLOC_REPORT_THRESHOLD={32 * 1024**3} ray start --address={address} --resources='" + '{"tpu": 1}\' --include-dashboard False', hide=True)
+    print("start_ray DONE")
