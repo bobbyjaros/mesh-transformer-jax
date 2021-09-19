@@ -88,8 +88,8 @@ class TPUCluster:
             for input, output in zip(data_chunked, ray.get(res)):
                 eval_mask = input["eval_mask"]
                 # BJ experiment, combined with CausalTransformer.eval() changes.
-                T = output["correct"].shape[1]
-                eval_mask = eval_mask[:, -T:] # BJ: NOT RIGHT. TODO.
+                # T = output["correct"].shape[1]
+                # eval_mask = eval_mask[:, -T:] # BJ: NOT RIGHT. TODO.
                 correct_and_valid = np.logical_and(output["correct"], eval_mask)
 
                 correct_tokens_count = np.sum(correct_and_valid, -1)

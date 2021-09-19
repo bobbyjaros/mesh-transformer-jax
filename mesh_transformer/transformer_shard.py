@@ -133,9 +133,9 @@ class CausalTransformer:
             eval_loss_fn = hk.without_apply_rng(hk.transform(eval_loss)).apply
 
             # BJ: experiment. Combined with TPU_Cluster.eval() changes.
-            ctx_length = 512 # 2048 - 128 # 512
-            ctx = ctx[-ctx_length:]
-            tgt = tgt[-ctx_length:]
+            # ctx_length = 512 # 2048 - 128 # 512
+            # ctx = ctx[-ctx_length:]
+            # tgt = tgt[-ctx_length:]
 
             # BJ: Only compute inside ctx_length.
             mask = (jnp.arange(0, len(ctx)) > ctx_length) * -1e10
