@@ -10,6 +10,7 @@ def grouper(n, iterable, fillvalue):
 
 
 # divide the seq length by 2 until it would truncate actual context
+# BJ: Sequence is left-justified, i.e. starts at position 0
 def shrink_seq(examples, min_seq=None):
     length = examples["obs"].shape[-1]
 

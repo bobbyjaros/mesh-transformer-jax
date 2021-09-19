@@ -57,6 +57,7 @@ class NetworkRunner(object):
                     network.write_ckpt(path, shard)
                     self.output_q.put(None)
                 elif operation == "load_ckpt":
+                    head_print(f"BJ: load_ckpt")
                     network.load_ckpt(input)
                     self.output_q.put(network.state["step"][0])
                 elif operation == "get_params":

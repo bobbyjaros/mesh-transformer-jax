@@ -257,6 +257,7 @@ class TransformerLayerShard(hk.Module):
 
         self.dim = dim
         self.dim_per_head = dim // heads
+        # See qvk_proj().
         self.heads_per_shard = heads // shards
         self.dim_per_shard = dim // shards
         self.pe_rotary_dims = config.get("pe_rotary_dims", self.dim_per_head)
@@ -314,6 +315,8 @@ class TransformerLayerShard(hk.Module):
         return self.dense_proj_o(dense_proj)
 
     def qvk_proj(self, x):
+        # Model parallelism (shards) splits along same axis as heads
+        # e.g. 16 heads, 8 shards -> 2 heads_per_shard.
         q = self.q(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
         v = self.v(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))
         k = self.k(x).reshape(x.shape[:-1] + (self.heads_per_shard, self.dim_per_head))

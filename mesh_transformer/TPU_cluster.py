@@ -66,6 +66,7 @@ class TPUCluster:
     @func_set_timeout(600)
     def eval(self, data):
         if isinstance(data, dict):
+            # Split examples among nodes (data parallelism):
             data_chunked = [{} for _ in self.nodes]
             for k, v in data.items():
                 v_chunks = np.array_split(v, len(self.nodes), axis=0)

@@ -172,6 +172,7 @@ if __name__ == "__main__":
 
                     pad_amount = max(pad_amount, 0)
 
+                    # Places pad_amount zeros to the left of tokens (and 0 zeros to the right):
                     padded_tokens = np.pad(tokens, ((pad_amount, 0),)).astype(np.uint32)[-seq:]
                     length = len(tokens)
                 except:

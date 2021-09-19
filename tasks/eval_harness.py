@@ -24,6 +24,7 @@ def process_init():
 def process_request(x, seq):
     global tokenizer
 
+    # Each request is a pair (context, continuation)
     ctx, cont = x
 
     ctx_tokens = tokenizer.encode("<|endoftext|>" + ftfy.fix_text(ctx, normalization="NFKC"))
@@ -36,6 +37,8 @@ def process_request(x, seq):
     pad_amount = seq - provided_ctx
 
     return {
+        #  <-- provided_ctx --> <----- pad_amount ---->
+        # [37 25 17 49 23 92 18 50256 50256 50256 50256]
         "obs": np.pad(all_tokens[:-1], ((0, pad_amount),), constant_values=50256),
         "target": np.pad(all_tokens[1:], ((0, pad_amount),), constant_values=50256),
         "ctx_length": seq,
@@ -54,6 +57,9 @@ class EvalHarnessAdaptor(LM):
         raise Exception("unimplemented")
 
     def __init__(self, tpu_cluster, seq, batch, shrink, min_seq=None):
+        """
+            seq: length of sequences
+        """
         super().__init__()
         self.tpu = tpu_cluster
         self.seq = seq
