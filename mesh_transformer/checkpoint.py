@@ -7,6 +7,7 @@ import jax
 import jax.numpy as jnp
 import numpy as np
 import multiprocessing
+import haiku as hk
 
 import ray
 from smart_open import open
@@ -187,6 +188,18 @@ def read_ckpt(pytree, dir, shards_in, shards_out=None, load_opt=True):
         unsharded = _unshard(shards, old_flattened)
 
     loaded_pytree = jax.tree_unflatten(structure, unsharded)
+
+    head_print("BJ: performing surgery on network")
+    params = hk.data_structures.to_mutable_dict(loaded_pytree["params"])
+    for k in params.keys():
+        if k.endswith("linear") or \
+            k.endswith("linear_1") or \
+                k.endswith("linear_2"):
+            head_print(f"Updating {k}...")
+            # head_print(f"k {params[k]}...")
+            head_print(f"params[{k}]['w'].shape {params[k]['w'].shape}...")
+            params[k]["w"][:, -100:, :] *= 0
+    loaded_pytree["params"] = hk.data_structures.to_immutable_dict(params)
 
     if not load_opt:
         loaded_pytree['opt_state'] = original_opt_state
