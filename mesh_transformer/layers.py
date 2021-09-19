@@ -641,6 +641,7 @@ class ProjectionShard(hk.Module):
 
         loss = jnp.log(sum_exp_logits) - predicted_logits
 
+        # BJ?: what is this?
         loss += (1e-4 * jnp.square(jnp.log(sum_exp_logits)) * z_loss).mean()
 
         correct = (0.0 == predicted_logits)

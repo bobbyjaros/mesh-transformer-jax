@@ -27,6 +27,7 @@ def process_request(x, seq):
     # Each request is a pair (context, continuation)
     ctx, cont = x
 
+    # BJ?: Why is <|endoftext|> at beginning?
     ctx_tokens = tokenizer.encode("<|endoftext|>" + ftfy.fix_text(ctx, normalization="NFKC"))
     cont_tokens = tokenizer.encode(ftfy.fix_text(cont, normalization="NFKC"))
 

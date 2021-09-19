@@ -38,6 +38,7 @@ def write(x, ckpt_dir):
     for _ in range(3):
         try:
             with open(file_path, "wb") as f:
+                # BJ?: why not savez_compressed? Surprising space vs time tradeoff.
                 np.savez(f, *i)
                 # cloudpickle.dump(i, f)
                 # print(f"written {idx} in {time.time() - start:.06}s")
@@ -88,6 +89,7 @@ def write_ckpt(pytree, dir, shard):
 
 def read_shard(ckpt_dir):
     out = []
+    # BJ?: Why don't we use a ThreadPool here like in write_ckpt?
     for idx in range(pieces):
         file_path = ckpt_dir + f"{idx}.npz"
         with open(file_path, "rb") as f:

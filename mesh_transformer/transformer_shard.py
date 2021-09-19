@@ -50,12 +50,14 @@ class CausalTransformerShard(hk.Module):
         input_len = context.shape[0]
 
         if self.rpe is not None:
+            head_print("BJ: using rpe")
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
         else:
             attn_bias = 0
 
         attn_bias += mask
 
+        # BJ?: Todo better understand why these are remat.
         x = hk.remat(self.embed)(context)
 
         for l in self.transformer_layers:
