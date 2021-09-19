@@ -86,10 +86,14 @@ class TPUCluster:
             each_correct = []
 
             for input, output in zip(data_chunked, ray.get(res)):
-                correct_and_valid = np.logical_and(output["correct"], input["eval_mask"])
+                eval_mask = input["eval_mask"]
+                # BJ experiment, combined with CausalTransformer.eval() changes.
+                T = output["correct"].shape[1]
+                eval_mask = eval_mask[:, -T:] # BJ: NOT RIGHT. TODO.
+                correct_and_valid = np.logical_and(output["correct"], eval_mask)
 
                 correct_tokens_count = np.sum(correct_and_valid, -1)
-                valid_tokens_count = np.sum(input["eval_mask"], -1)
+                valid_tokens_count = np.sum(eval_mask, -1)
 
                 correct_example = np.logical_and(valid_tokens_count == correct_tokens_count, valid_tokens_count > 0)
                 valid_example = valid_tokens_count > 0
@@ -102,7 +106,7 @@ class TPUCluster:
                 last_correct += sum(last_correct_example)
                 total_last_loss += sum(valid_example * output["last_loss"])
 
-                valid_loss = np.sum(output["all_loss"] * input["eval_mask"], -1)
+                valid_loss = np.sum(output["all_loss"] * eval_mask, -1)
                 mask_loss += valid_loss.tolist()
 
             return {

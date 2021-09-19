@@ -324,7 +324,10 @@ class TransformerLayerShard(hk.Module):
         return q, v, k
 
     def __call__(self, x, attn_bias):
+        # head_print(f"x.shape: {x.shape}")
         x = f_psum(x)
+        ## BJ: don't mess with length here, because it won't match targets & eval
+
         ## BJ: GPT-2 moved LayerNorm to the input.
         ##     See diagram in Fig 2 of Megatron-LM paper.
         x = self.norm(x)
