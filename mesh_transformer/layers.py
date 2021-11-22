@@ -359,6 +359,7 @@ class TransformerLayerShard(hk.Module):
         attn_out = self.self_attn(q, v, k, bias)
         dense_out = self.ff(x)
 
+        # BJ: attn_out and dense_out are (num_shards, batch_size, T, dims)
         return g_psum(attn_out + dense_out)
 
     # iterate the decoding process by a single token
@@ -628,7 +629,10 @@ class ProjectionShard(hk.Module):
 
         # BJ: targets are over global # output, but each shard has its local chunk
         shard_start_index = jax.lax.axis_index('shard') * self.dim_per_shard
-        # BJ: why do we need stop_gradient here?
+        # BJ: stable_softmax subtracts max for numerical stability, so we use stop_gradient().
+        #     See exammple in https://www.tensorflow.org/api_docs/python/tf/stop_gradient:
+        #     "if the max values are not unique then the gradient could flow to the wrong
+        #     input".  --> treat as a constant.
         global_max = jax.lax.pmax(jax.lax.stop_gradient(logits.max(-1, keepdims=True)), "shard")
         logits -= jax.lax.stop_gradient(global_max)
 
@@ -652,6 +656,7 @@ class ProjectionShard(hk.Module):
         return loss, correct
 
 
+# Used by CausalTransformerV2
 class Projection(hk.Module):
     def __init__(self, config, name=None):
         super().__init__(name=name)

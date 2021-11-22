@@ -63,6 +63,9 @@ class CausalTransformerShard(hk.Module):
         for l in self.transformer_layers:
             x = x + hk.remat(l)(x, attn_bias)
 
+        # BJ:
+        #     x is (num_shards, batch_size, T, dim)
+        #     target is (num_shards, batch_size, T)
         return hk.remat(self.proj.loss)(x, target, z_loss)
 
     def loss(self, ctx, tgt, z_loss=False, mask=0.0):
@@ -297,12 +300,20 @@ class CausalTransformer:
     def load_ckpt(self, path):
         self.state = read_ckpt(self.state, path, thread_resources.env.shape['mp'])
 
+    """
+      sample is of form: {
+            "obs": (batch_size, num_shards, T)
+            "target": (batch_size, num_shards, T)
+        }
+    """
     def train(self, sample):
         # print("train iter")
         # print("sample", sample["obs"])
         # print("target", sample["target"])
         obs = jnp.transpose(sample["obs"], (1, 0, 2))
         target = jnp.transpose(sample["target"], (1, 0, 2))
+        # BJ: --> (num_shards, batch_size, T)
+
 
         # print("train sample", obs.shape)
         # print("train target", target.shape)

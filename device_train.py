@@ -70,6 +70,7 @@ def save(network, step, bucket, path, mp, aux=None, keep_n=3, delete_old=True):
     start = time.time()
     res = []
     for shard_id in range(mp):
+        print(f"save() to gs://{bucket}/{path}/step_{step}/ shard {shard_id}")
         write_ckpt(network.state, f"gs://{bucket}/{path}/step_{step}/", shard_id)
 
     print(f"Wrote checkpoint in {time.time() - start:.06}s")
@@ -104,8 +105,13 @@ def save(network, step, bucket, path, mp, aux=None, keep_n=3, delete_old=True):
     with open(f"gs://{bucket}/{path}/meta.json", "w") as f:
         json.dump(meta, f)
 
-
+"""
+    BJ:
+        network is CausalTransformer
+        data is (batch_size, num_shards, T+1)
+"""
 def train_step(network, data):
+    # BJ: target data may be further manipulated inside loss() in layers.py
     inputs = {
         "obs": data[:, :, :-1],
         "target": data[:, :, 1:],
@@ -239,6 +245,7 @@ if __name__ == "__main__":
                                           per_replica_batch * tpu_size // cores_per_replica),
                                       sample_size=params['seq'],
                                       restore_state=train_loader)
+    # BJ: batch_size is (batch_size, num_shards)
 
     global_val_batch = per_replica_batch * tpu_size // cores_per_replica
 
@@ -271,6 +278,7 @@ if __name__ == "__main__":
             if fine_tuning:
                 # overwrite the loaded scheduler step with zeros
                 # this makes fine-tuning use the lr schedule in
+                print(f"network.state['opt_state'][-1]: from {network.state['opt_state'][-1]} --> {init_sched_state}")
                 network.state["opt_state"][-1] = init_sched_state
 
             print(f"network loaded in {time.time() - start:.06}s")
@@ -324,6 +332,7 @@ if __name__ == "__main__":
                 exit()
 
             start = time.time()
+            # BJ: As configured above, get_samples() will produce (batch_size, num_shards, T+1)
             loss, last_loss, grad_norm, grad_norm_micro = train_step(
                 network, train_dataset.get_samples()
             )

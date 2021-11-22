@@ -63,6 +63,7 @@ def split(a, n):
 
 
 def write_ckpt(pytree, dir, shard):
+    head_print(f"write_ckpt --> {dir} shard {shard}")
     # ckpt_dir = Path(dir)
     # ckpt_dir.mkdir(parents=True, exist_ok=True)
 
