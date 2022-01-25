@@ -141,7 +141,10 @@ def reshard(x, old_shape):
 
     return out
 
-
+"""
+BJ: Example call:
+  network.state = read_ckpt(network.state, f"gs://{bucket}/{model_dir}/step_{ckpt_step}/", devices.shape[1])
+"""
 def read_ckpt(pytree, dir, shards_in, shards_out=None, load_opt=True):
     if shards_out is None:
         shards_out = shards_in

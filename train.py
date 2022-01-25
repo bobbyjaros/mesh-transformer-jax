@@ -72,6 +72,7 @@ if __name__ == "__main__":
     pe = params["pe"]
     assert pe in ["fixed", "rotary", "t5"]
 
+    # Build model on a cluster, using ray.
     t = build_model(params, tpu_name, region, preemptible, version=args.version)
 
     try:

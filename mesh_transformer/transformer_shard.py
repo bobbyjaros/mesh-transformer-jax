@@ -50,6 +50,7 @@ class CausalTransformerShard(hk.Module):
         input_len = context.shape[0]
 
         if self.rpe is not None:
+            # BJ: Note that rpe is applied at every layer.
             head_print("BJ: using rpe")
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
         else:
@@ -106,6 +107,7 @@ class CausalTransformerShard(hk.Module):
 
         if self.rpe is not None:
             attn_bias = self.rpe(input_len, input_len, self.heads_per_shard, 32)
+            # BJ: rpe() returns shape (heads, q_len, k_len). Only take the last q.
             attn_bias = attn_bias[:, -1:, :]
         else:
             attn_bias = 0

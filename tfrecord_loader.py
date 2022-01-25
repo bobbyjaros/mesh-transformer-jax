@@ -46,6 +46,12 @@ class TFRecordLoader:
             file = file.prefetch(10)
 
             for file_idx, data in enumerate(file):
+                # BJ: If the element lists of data have different lengths, you will get warning:
+                #     "Creating an ndarray from ragged nested sequences (which is a list-or-tuple of lists-or-tuples-or ndarrays with different lengths or shapes) is deprecated."
+                #     ...which will cause errors below (a 2-d array when expecting 3-d).
+                #     Potential work-around (not quite working last time I tried):
+                #         data = [x[0:2049] for x in data]
+                #         data = jax.numpy.array(data)
                 data = jax.tree_map(lambda x: x.numpy(), data)
                 data = self.map_fn(data)
 

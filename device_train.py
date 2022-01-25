@@ -106,15 +106,17 @@ def save(network, step, bucket, path, mp, aux=None, keep_n=3, delete_old=True):
         json.dump(meta, f)
 
 """
-    BJ:
-        network is CausalTransformer
-        data is (batch_size, num_shards, T+1)
+BJ:
+Args:
+    network: a CausalTransformer
+    data: `(batch_size, num_shards, T+1)`
 """
 def train_step(network, data):
-    # BJ: target data may be further manipulated inside loss() in layers.py
+    obs = data[:, :, :-1]
+    target = data[:, :, 1:]
     inputs = {
-        "obs": data[:, :, :-1],
-        "target": data[:, :, 1:],
+        "obs": obs,
+        "target": target,
     }
 
     loss, last_loss, grad_norm, grad_norm_micro = network.train(inputs)
@@ -128,9 +130,11 @@ def train_step(network, data):
 
 
 def eval_step(network, data):
+    obs = data[:, :-1]
+    target = data[:, 1:]
     inputs = {
-        "obs": data[:, :-1],
-        "target": data[:, 1:],
+        "obs": obs,
+        "target": target,
     }
 
     out = network.eval(inputs)
@@ -319,6 +323,7 @@ if __name__ == "__main__":
                     for i, _ in tqdm(zip(val_set.sample_once(), range(val_batches)),
                                      desc=f"validation for step {step}, set {name}",
                                      total=val_batches):
+                        # BJ DEBUG print(f"eval_step on {i.shape}")
                         val_loss.append(eval_step(network, i))
                     val_set.reset()
 

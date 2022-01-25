@@ -157,6 +157,7 @@ def start_ray(conn, address, version=1):
     conn.sudo('python3 setup.py install', hide=True)
     print("start_ray 1")
 
+    # BJ: Commenting out this section made it run, but are we missing anything important?
     if version == 2:
         conn.put("scripts/init_ray_v2.sh", "/tmp/ray-tpu.sh")
     else:
