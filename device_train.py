@@ -309,7 +309,7 @@ if __name__ == "__main__":
         S_noise_avg = None
 
         while True:
-            if (step % ckpt_every == 1) or step == total_steps:
+            if step > 1 and (step % ckpt_every == 1) or step == total_steps:
                 print(f"saving a checkpoint for step {step}")
                 save(network, step, bucket, model_dir,
                      mp=cores_per_replica,
@@ -317,7 +317,9 @@ if __name__ == "__main__":
                      delete_old=True,
                      )
 
-            if step % val_every == 1:  # 1 because we've already taken a step to compile train fn
+            # 1 instead of zero because we've already taken a step to compile train fn
+            # BJ: More val points early on:
+            if (step % val_every == 1 or step in [101, 201, 301, 501, 1001, 1501]):
                 for name, val_set in val_sets.items():
                     val_loss = []
                     for i, _ in tqdm(zip(val_set.sample_once(), range(val_batches)),
