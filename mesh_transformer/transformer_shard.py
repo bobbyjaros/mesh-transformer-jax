@@ -389,7 +389,7 @@ class CausalTransformer:
         #      [2]: new_key: (16, 2)
         #   outputs = (next_token, sample_info)
         #      [0]: next_token: (16, 256, 1)
-        #      [1]: sample_info:  None
+        #      [1]: sample_info:  <log_probs> = (16, 256, 1)   TODO verify shape
         # print(f"BJ DEBUG generate output: generate_output[1][0].shape: {generate_output[1][0].shape}")
         return generate_output
 

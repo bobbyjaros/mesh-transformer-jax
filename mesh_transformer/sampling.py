@@ -48,14 +48,22 @@ def nucleaus_filter(logits, top_p=0.9, top_k=None):
 
     return logits
 
-
+"""
+BJ:
+Returns:
+    (ind, logit)
+"""
 def nucleaus_sample(key, logits, _, top_p=0.9, temp=1, top_k=None):
+    log_partition = jnp.log(jnp.sum(jnp.exp(logits)))
     logits = nucleaus_filter(logits, top_p, top_k=top_k)
 
-    return softmax_sample(key, logits, None, temp=temp)
+    ind, logit = softmax_sample(key, logits, None, temp=temp)
+    return ind, logit - log_partition
 
 
 if __name__ == "__main__":
     import numpy as np
     logits = np.array([[-2, -1, 0, 0.8, 0, 0.1, 0.3, 0.4, 0.5, 0.6, 0.7, -3]])
-    print(nucleaus_filter(logits))
+    # print(nucleaus_filter(logits))
+    key = jax.random.PRNGKey(42)
+    ind, log_prob = nucleaus_sample(key, logits, None)

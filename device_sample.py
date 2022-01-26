@@ -100,6 +100,14 @@ def gen_from_background(background_tokens, tokenizer, style_tokens, user_text = 
                 {"top_p": np.ones(1) * 0.9,
                 "temp": np.ones(1) * 0.75})
             (final_state, outputs) = output
+            print(f"outputs[1].shape: {outputs[1].shape}")
+            end_of_text = np.where(outputs[0][0,:,0] == 50256)[0]
+            if len(end_of_text) > 0:
+                first_end_of_text = end_of_text[0]
+            else:
+                first_end_of_text = outputs[0].shape[1]
+            mean_log_prob = outputs[1][0, 0:first_end_of_text, 0].mean()
+            print(f"log_prob mean: {mean_log_prob}")
             for o in outputs[0][0, :, 0]:
                 print_and_save(f, tokenizer.decode(o), newline=False)
             # for logp in outputs[1]
