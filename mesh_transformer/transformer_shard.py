@@ -79,7 +79,7 @@ class CausalTransformerShard(hk.Module):
             "correct": correct
         }
 
-    def generate_initial(self, context, length, aux):
+    def generate_initial(self, context, length, gen_length):
         # slice last token off the context (we use that in generate_once to generate the first new token)
         # The last token is the first argument of carry in generate_scan_fn.
         last = context[-1:]
@@ -97,7 +97,7 @@ class CausalTransformerShard(hk.Module):
         states = []
 
         for l in self.transformer_layers:
-            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias, aux)
+            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias, gen_length)
             x = x + res
             states.append(layer_state)
 
@@ -216,11 +216,11 @@ class CausalTransformer:
             sampler = config["sampler"]
             gen_length = self.gen_length
 
-            def generate_sample(context, ctx_length, aux):
+            def generate_sample(context, ctx_length, gen_length):
                 # print(f"BJ DEBUG generate_sample: context.shape: {context.shape}")
                 transformer = CausalTransformerShard(config)
                 # BJ: Process the provided context before starting to generate.
-                _, initial_state = transformer.generate_initial(context, ctx_length, aux)
+                _, initial_state = transformer.generate_initial(context, ctx_length, gen_length)
 
                 def generate_scan_fn(carry, sampler_input):
                     next_token, decode_state, sample_key = carry
@@ -242,7 +242,7 @@ class CausalTransformer:
                 return final_state, outputs
 
             generate_fn = hk.transform(generate_sample).apply
-            return generate_fn(state["params"], key, ctx, ctx_length, aux)
+            return generate_fn(state["params"], key, ctx, ctx_length, gen_length)
 
         self.init_xmap = jax.experimental.maps.xmap(fun=init_fun,
                                                     in_axes=(["shard", ...],

@@ -487,7 +487,7 @@ class TransformerLayerShard(hk.Module):
         return res, new_decode_state
 
     # take in right aligned context tokens and generate an initial state
-    def get_init_decode_state(self, x, given_length, attn_bias, aux):
+    def get_init_decode_state(self, x, given_length, attn_bias, gen_length):
         """
         BJ:
         Args:
@@ -535,16 +535,14 @@ class TransformerLayerShard(hk.Module):
 
         res = g_psum(attn_out + dense_out)
 
-        output_len = aux.shape[0] # if aux else full_length
         if DO_BACKGROUND and DO_CAUSAL_BOTTLENECK:
             # Assumes input is |-----------background-----------|--style--|-------predict---------|
             # i.e. no right padding to make even batch sizes. (TODO: should we have this?)
-            # print(f"output_len: {output_len}")
             initial_decode_state = {
                 # BJ: enforces the bottleneck! TODO generalize
-                "k": k[-output_len:],
-                "v": v[-output_len:],
-                "rotary_offset": full_length - output_len,
+                "k": k[-gen_length:],
+                "v": v[-gen_length:],
+                "rotary_offset": full_length - gen_length,
                 # visible_ctx_length is length of tokens that we can attend back to.
                 "visible_ctx_length": full_length - BACKGROUND_LEN
             }
