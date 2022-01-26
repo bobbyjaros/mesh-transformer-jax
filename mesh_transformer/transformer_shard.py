@@ -79,8 +79,9 @@ class CausalTransformerShard(hk.Module):
             "correct": correct
         }
 
-    def generate_initial(self, context, length):
+    def generate_initial(self, context, length, aux):
         # slice last token off the context (we use that in generate_once to generate the first new token)
+        # The last token is the first argument of carry in generate_scan_fn.
         last = context[-1:]
         context = context[:-1]
 
@@ -96,7 +97,7 @@ class CausalTransformerShard(hk.Module):
         states = []
 
         for l in self.transformer_layers:
-            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias)
+            res, layer_state = l.get_init_decode_state(x, length - 1, attn_bias, aux)
             x = x + res
             states.append(layer_state)
 
@@ -130,7 +131,7 @@ class CausalTransformer:
         self.config = config
         optimizer = config["optimizer"]
 
-        def eval(state, ctx, tgt, ctx_length):
+        def eval_fun(state, ctx, tgt, ctx_length):
             def eval_loss(x, y, mask):
                 transformer = CausalTransformerShard(config)
                 return transformer.loss(x, y, mask=mask)
@@ -147,7 +148,7 @@ class CausalTransformer:
 
             return eval_loss_fn(to_bf16(state["params"]), ctx, tgt, mask)
 
-        def train(state, ctx, tgt):
+        def train_fun(state, ctx, tgt):
             def train_loss(x, y):
                 transformer = CausalTransformerShard(config)
                 out = transformer.loss(x, y, z_loss=True)
@@ -189,7 +190,7 @@ class CausalTransformer:
                 "opt_state": new_opt_state
             }
 
-        def init(key, x):
+        def init_fun(key, x):
             def train_loss(x, y):
                 transformer = CausalTransformerShard(config)
                 return transformer.loss(x, y)
@@ -204,13 +205,22 @@ class CausalTransformer:
                 "opt_state": optimizer.init(params)
             }
 
-        def generate(state, key, ctx, ctx_length, aux, sampler_options):
+        """
+        BJ:
+        Args:
+            ctx_length: Note that ctx_length != ctx.shape[0] when there is left-padding (right justified), for example.
+        """
+        def generate_fun(state, key, ctx, ctx_length, aux, sampler_options):
+            # BJ: Operates on a single sample, distributed to this function via xmap.
+            # print(f"BJ DEBUG init.generate: ctx.shape {ctx.shape}")
             sampler = config["sampler"]
             gen_length = self.gen_length
 
             def generate_sample(context, ctx_length, aux):
+                # print(f"BJ DEBUG generate_sample: context.shape: {context.shape}")
                 transformer = CausalTransformerShard(config)
-                _, initial_state = transformer.generate_initial(context, ctx_length)
+                # BJ: Process the provided context before starting to generate.
+                _, initial_state = transformer.generate_initial(context, ctx_length, aux)
 
                 def generate_scan_fn(carry, sampler_input):
                     next_token, decode_state, sample_key = carry
@@ -218,6 +228,7 @@ class CausalTransformer:
 
                     logits, new_state = transformer.generate_once(next_token, decode_state)
                     next_token, sample_info = sampler(sample_key, logits, sampler_input, **sampler_options)
+                    # for nucleaus_sampler, sample_info is the logit of next_token
 
                     if self.return_logits:
                         output = (next_token, sample_info, logits)
@@ -226,19 +237,20 @@ class CausalTransformer:
                     new_carry = (next_token, new_state, new_key)
                     return new_carry, output
 
+                # BJ: Rollouts on generation timesteps, calling generate_scan_fn() #gen_length times serially.
                 final_state, outputs = jax.lax.scan(generate_scan_fn, initial_state, xs=aux, length=gen_length)
                 return final_state, outputs
 
             generate_fn = hk.transform(generate_sample).apply
             return generate_fn(state["params"], key, ctx, ctx_length, aux)
 
-        self.init_xmap = jax.experimental.maps.xmap(fun=init,
+        self.init_xmap = jax.experimental.maps.xmap(fun=init_fun,
                                                     in_axes=(["shard", ...],
                                                              ["batch", ...]),
                                                     out_axes=["shard", ...],
                                                     axis_resources={'shard': 'mp', 'batch': 'dp'})
 
-        self.eval_xmap = jax.experimental.maps.xmap(fun=eval,
+        self.eval_xmap = jax.experimental.maps.xmap(fun=eval_fun,
                                                     in_axes=(["shard", ...],
                                                              ["batch", ...],
                                                              ["batch", ...],
@@ -246,7 +258,7 @@ class CausalTransformer:
                                                     out_axes=["batch", ...],
                                                     axis_resources={'shard': 'mp', 'batch': 'dp'})
 
-        self.train_xmap = jax.experimental.maps.xmap(fun=train,
+        self.train_xmap = jax.experimental.maps.xmap(fun=train_fun,
                                                      in_axes=(["shard", ...],
                                                               ["batch", ...],
                                                               ["batch", ...]),
@@ -254,7 +266,7 @@ class CausalTransformer:
                                                      donate_argnums=(0,),
                                                      axis_resources={'shard': 'mp', 'batch': 'dp'})
 
-        self.generate_xmap = jax.experimental.maps.xmap(fun=generate,
+        self.generate_xmap = jax.experimental.maps.xmap(fun=generate_fun,
                                                         in_axes=(["shard", ...],
                                                                  ["batch", ...],
                                                                  ["batch", ...],
@@ -356,12 +368,30 @@ class CausalTransformer:
         self.gen_length = gen_length
         self.return_logits = return_logits
 
-        return self.generate_xmap(self.state,
+        # print(f"BJ DEBUG generate: ctx.shape: {ctx.shape}")
+        # The xmap distributes ctx along batch axis.
+        # So each generate() will get ctx of shape (1044,).
+        generate_output = self.generate_xmap(self.state,
                                   jnp.array(key.take(batch_size)),
                                   ctx,
                                   np.array(ctx_length, dtype=np.uint32),
                                   aux,
                                   sampler_options)
+        # generate_output: final_state, outputs
+        #   final_state = new_carry = (next_token, new_state, new_key)
+        #      [0]: next_token: (16, 1)
+        #      [1]: new_state: one for each layer (i.e. 28) of
+        #           {"visible_ctx_length": visible_ctx_length,
+        #            "offset": offset,
+        #            "k": k,
+        #            "v": v
+        #           }
+        #      [2]: new_key: (16, 2)
+        #   outputs = (next_token, sample_info)
+        #      [0]: next_token: (16, 256, 1)
+        #      [1]: sample_info:  None
+        # print(f"BJ DEBUG generate output: generate_output[1][0].shape: {generate_output[1][0].shape}")
+        return generate_output
 
 
 # this bypasses the CausalTransformerShard class (which causes ugly code) but in return allows layers to be processed
